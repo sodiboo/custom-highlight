@@ -2,7 +2,7 @@
 
 This is a bot i made to highlight URSL, a little language i made. It reacts to any message that looks like so:
 
-````md
+````
 ```ursl
 bits 8
 func $main {
@@ -13,7 +13,7 @@ func $main {
 
 And responds with an ANSI-formatted syntax highlighting of that code:
 
-````md
+````
 ```ansi
 [35mbits[0m [36m8[0m
 [35mfunc[0m [33m$main[0m [30m{[0m
@@ -21,6 +21,8 @@ And responds with an ANSI-formatted syntax highlighting of that code:
 [30m}[0m
 ```
 ````
+
+It also supports URCL, and as the bot's name suggests, i'm happy to add support for more languages, such as your own ISA.
 
 The above may not look great in wherever you're viewing this, but in discord that renders pretty nicely:
 

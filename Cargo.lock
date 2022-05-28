@@ -143,6 +143,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "custom-highlight"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "serenity",
+ "tokio",
+ "tree-sitter",
+ "tree-sitter-highlight",
+ "tree-sitter-urcl",
+ "tree-sitter-ursl",
+]
+
+[[package]]
 name = "dashmap"
 version = "5.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1217,19 +1230,6 @@ dependencies = [
  "matches",
  "percent-encoding",
  "serde",
-]
-
-[[package]]
-name = "ursl-bot"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "serenity",
- "tokio",
- "tree-sitter",
- "tree-sitter-highlight",
- "tree-sitter-urcl",
- "tree-sitter-ursl",
 ]
 
 [[package]]
