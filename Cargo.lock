@@ -1116,7 +1116,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-urcl"
 version = "0.0.1"
-source = "git+https://github.com/Terrain2/tree-sitter-urcl#ecabec2570fb938e04ac2a8e3515cf10d009b694"
+source = "git+https://github.com/Terrain2/tree-sitter-urcl#52870bd49a450e6726d61443c7fa87afdf1eca42"
 dependencies = [
  "cc",
  "tree-sitter",
