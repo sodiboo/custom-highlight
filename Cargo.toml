@@ -1,0 +1,32 @@
+[package]
+name = "ursl-bot"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tree-sitter = "0.20.6"
+tree-sitter-highlight = "0.20.1"
+lazy_static = "1.4.0"
+tree-sitter-urcl = { git = "https://github.com/Terrain2/tree-sitter-urcl" }
+tree-sitter-ursl = { git = "https://github.com/Terrain2/tree-sitter-ursl" }
+
+[dependencies.serenity]
+version = "0.11.2"
+default-features = false
+features = [ # default except framework, standard_framework
+    "builder",
+    "cache",
+    "chrono",
+    "client",
+    "gateway",
+    "model",
+    "http",
+    "utils",
+    "rustls_backend",
+]
+
+[dependencies.tokio]
+version = "1.18.2"
+features = ["full"]
