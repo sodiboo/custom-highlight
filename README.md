@@ -26,6 +26,6 @@ The above may not look great in wherever you're viewing this, but in discord tha
 
 ![The above code, rendered in discord](example.png)
 
-This bit is easily extensible to any tree-sitter grammar, but currently it only renders ``ursl`` codeblocks, ignoring all else.
+This bot is easily extensible to any tree-sitter grammar, but currently it only renders ``ursl`` codeblocks, ignoring all else.
 
 If you wanna run this bot locally, create ``token`` file with the token in the root of this repository, and then just ``cargo run``
