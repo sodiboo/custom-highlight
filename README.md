@@ -1,6 +1,6 @@
 # Custom Discord Highlighter
 
-This is a bot i made to highlight URSL, a little language i made. It also supports URCL, and as the bot's name suggests, and i'm happy to add support for more languages, such as your own ISA. Just contact me if you'd like to add your language.
+This is a bot i made to highlight URSL, a little language i made. It also supports URCL, and as the bot's name suggests, i'm happy to add support for more languages, such as your own ISA. Just contact me if you'd like to add your language.
 
 It reacts to any message that looks like so:
 
