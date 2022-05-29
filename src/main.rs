@@ -193,15 +193,18 @@ impl EventHandler for Handler {
 fn codeblock(content: &str) -> Option<(&str, &str, &str)> {
     let content = content.trim_end();
     if !content.ends_with("\n```") {
-        return None;
+        return None
     }
     let content = &content[..(content.len() - 4)];
     let (before, content) = content.split_once("```")?;
     // multiple codeblocks, nontrivial, so abort
     if content.contains("```") {
-        return None;
+        return None
     }
     let (lang, code) = content.split_once("\n")?;
+    if code.trim().is_empty() {
+        return None
+    }
     Some((before.trim(), lang, code))
 }
 
