@@ -98,6 +98,7 @@ lazy_static! {
             comment => GRAY,
             label => YELLOW,
             register => CYAN,
+            "register.special" => CYAN,
             instruction => BLUE,
             string => CYAN,
             "string.special" => CYAN,
