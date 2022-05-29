@@ -92,6 +92,7 @@ lazy_static! {
             header => PINK,
             constant => YELLOW,
             number => CYAN,
+            relative => CYAN,
             port => GREEN,
             macro => PINK,
             comment => GRAY,
