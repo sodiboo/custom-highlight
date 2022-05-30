@@ -28,6 +28,8 @@ The above may not look great in wherever you're viewing this, but in discord tha
 
 ![The above code, rendered in discord](example.png)
 
-This bot is easily extensible to any tree-sitter grammar. It responds to any message that is a codeblock, and optionally a command it recognizes. ``+parse`` will just parse the codeblock's contents and dump the root node as an S-expression, and ``+highlight`` will print the ANSI highlighting. If there is no command at all and the message is a pure codeblock, it will default to ``+highlight``.
+This bot is easily extensible to any tree-sitter grammar. It responds to any message that is a codeblock, and optionally a command it recognizes. ``+parse`` will just parse the codeblock's contents and dump the root node as an S-expression, and ``+highlight`` will print the ANSI highlighting. If there is no command at all and the message is a pure codeblock, it will default to ``+highlight``. If you're on mobile, you can also do ``+render`` to render it to an image, which will be easier to view on more platforms.
 
-If you wanna run this bot locally, create ``token`` file with the token in the root of this repository, and then just ``cargo run``
+The color scheme of this bot's highlighting is generally based loosely on vscode's default theme of Dark+, with some compromises being made. Most notably, all literals are ``CYAN`` to match discord's default language settings.
+
+If you wanna run this bot locally, create ``token`` file with the token in the root of this repository, add a font named ``font.ttf`` (i use [Fira Code](https://github.com/tonsky/FiraCode)) and then just ``cargo run``
