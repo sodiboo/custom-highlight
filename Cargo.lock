@@ -806,9 +806,9 @@ dependencies = [
 
 [[package]]
 name = "miniz_oxide"
-version = "0.5.1"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2b29bd4bc3f33391105ebee3589c19197c4271e3e5a9ec9bfe8127eeff8f082"
+checksum = "6f5c75688da582b8ffc1f1799e9db273f32133c49e048f614d22ec3256773ccc"
 dependencies = [
  "adler",
 ]
@@ -970,9 +970,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87f5ec2493a61ac0506c0f4199f99070cbe83857b0337006a30f3e6719b8ef58"
+checksum = "3742b2c103b9f06bc9fff0a37ff4912935851bee6d36f3c02bcc755bcfec228f"
 dependencies = [
  "lock_api",
  "parking_lot_core",
@@ -1704,7 +1704,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-urcl"
 version = "0.0.1"
-source = "git+https://github.com/Terrain2/tree-sitter-urcl#e28853456ad76b6a9607483697cad81e5336b4dc"
+source = "git+https://github.com/Terrain2/tree-sitter-urcl#7d97936aaae7a26943d1de076045714177470f81"
 dependencies = [
  "cc",
  "tree-sitter",
@@ -1713,7 +1713,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-ursl"
 version = "0.0.1"
-source = "git+https://github.com/Terrain2/tree-sitter-ursl#a8a698ec4819c1398135f0b3c9dd88bca0d81c3c"
+source = "git+https://github.com/Terrain2/tree-sitter-ursl#c8185a0f525d40a229c95c524567ad68b883d751"
 dependencies = [
  "cc",
  "tree-sitter",

@@ -34,7 +34,7 @@ enum LineHighlightEvent<'a> {
     Newline,
 }
 
-fn draw_rounded_box<C>(canvas: &mut C, rect: Rect, radius: u32, color: <C as Canvas>::Pixel)
+fn draw_rounded_box<C>(canvas: &mut C, rect: Rect, radius: u32, color: <C as Canvas>::Pixel, draw_safe_area: bool)
 where
     C: Canvas,
 {
@@ -45,14 +45,17 @@ where
     let safe = Rect::at(rect.left() + offset, rect.top() + offset)
         .of_size(rect.width() - diameter, rect.height() - diameter);
     let left = Rect::at(rect.left(), safe.top()).of_size(radius, safe.height());
-    let right = Rect::at(safe.right() + 1, safe.top()).of_size(radius, safe.height());
     let top = Rect::at(safe.left(), rect.top()).of_size(safe.width(), radius);
+    let right = Rect::at(safe.right() + 1, safe.top()).of_size(radius, safe.height());
     let bottom = Rect::at(safe.left(), safe.bottom() + 1).of_size(safe.width(), radius);
-    draw_filled_rect_mut(canvas, safe, color);
+    if draw_safe_area {
+        draw_filled_rect_mut(canvas, safe, color);
+    }
     draw_filled_rect_mut(canvas, left, color);
-    draw_filled_rect_mut(canvas, right, color);
     draw_filled_rect_mut(canvas, top, color);
+    draw_filled_rect_mut(canvas, right, color);
     draw_filled_rect_mut(canvas, bottom, color);
+
     draw_filled_circle_mut(canvas, (safe.left(), safe.top()), radius as i32, color);
     draw_filled_circle_mut(canvas, (safe.left(), safe.bottom()), radius as i32, color);
     draw_filled_circle_mut(canvas, (safe.right(), safe.top()), radius as i32, color);
@@ -143,15 +146,18 @@ pub fn render(config: &LanguageConfig, code: &str) -> Result<Image<Rgba<u8>>, &'
             });
 
     const BORDER_RADIUS: u32 = RADIUS + BORDER_WIDTH;
+    print!("dimensions are {width}x{height}");
     if width * height > 1000 * 1000 {
+        println!(" (too big)");
         return Err("Image is too big, fuck off")
     }
+    println!();
     let mut image = Image::new(width + BORDER_RADIUS * 2, height + BORDER_RADIUS * 2);
     let full = Rect::at(0, 0).of_size(image.width(), image.height());
     let inner = Rect::at(BORDER_WIDTH as i32, BORDER_WIDTH as i32)
         .of_size(width + RADIUS * 2, height + RADIUS * 2);
-    draw_rounded_box(&mut image, full, BORDER_RADIUS, BORDER);
-    draw_rounded_box(&mut image, inner, RADIUS, BG);
+    draw_rounded_box(&mut image, full, BORDER_RADIUS, BORDER, false);
+    draw_rounded_box(&mut image, inner, RADIUS, BG, true);
 
     let mut y = BORDER_RADIUS as i32;
     for (segments, (_, height)) in iter::zip(lines, dimensions) {

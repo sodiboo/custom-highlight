@@ -220,7 +220,6 @@ impl EventHandler for Handler {
                 if let Err(error) = command(
                     &ctx,
                     &channel,
-                    &msg,
                     match op {
                         "" if !NO_HIGHLIGHT_BY_DEFAULT.contains(&lang) => "+highlight",
                         _ => op,
@@ -240,31 +239,28 @@ impl EventHandler for Handler {
 async fn command(
     ctx: &Context,
     channel: &Channel,
-    msg: &Message,
     op: &str,
     config: &LanguageConfig,
     code: &str,
 ) -> Result<(), &'static str> {
     match op {
         "+highlight" => {
-            println!("{} ran +highlight", msg.author);
             let formatted = syntax_highlight(config, code)?;
             chunk_ansi(ctx, channel, &formatted).await.unwrap()
         }
         "+parse" => {
-            println!("{} ran +parse", msg.author);
             let sexp = sexp(config, code)?;
             chunk_ansi(ctx, channel, &sexp).await.unwrap();
         }
         "+render" => {
-            println!("{} ran +render", msg.author);
+            println!("begin render ({} bytes)", code.len());
             // normalize newlines to \n
             let code = code
-                .lines()
-                .fold(String::new(), |out, line| out + "\n" + line);
+            .lines()
+            .fold(String::new(), |out, line| out + "\n" + line);
             // ensure no leading or trailing newlines
             let code = code.trim_matches('\n');
-
+            
             let image = render(config, code)?;
             let mut buffer = Vec::new();
             let png = PngEncoder::new(&mut buffer);
@@ -276,11 +272,10 @@ async fn command(
             )
             .err_as("Error when encoding the image")?;
             let bytes = &buffer[..];
-            println!("encoded png ({} B)", bytes.len());
+            println!("encoded png ({} bytes)", bytes.len());
             send(ctx, channel, |msg| msg.add_file((bytes, "code.png")))
                 .await
                 .unwrap();
-            println!("sent img");
         }
         _ => (),
     }
