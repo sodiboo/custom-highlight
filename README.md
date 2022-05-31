@@ -36,4 +36,8 @@ This bot is easily extensible to any tree-sitter grammar. It responds to any mes
 
 The color scheme of this bot's highlighting is generally based loosely on vscode's default theme of Dark+, with some compromises being made. Most notably, all literals are ``CYAN`` to match discord's default language settings.
 
-If you wanna run this bot locally, create ``token`` file with the token in the root of this repository, add a font named ``font.ttf`` (i use [Fira Code](https://github.com/tonsky/FiraCode)) and then just ``cargo run``
+If you wanna run this bot locally, create ``token`` file with the token in the root of this repository, add a font named ``font.ttf`` (i use [Fira Code](https://github.com/tonsky/FiraCode)) and then just ``cargo run``.
+
+---
+
+Avatar by [tezar tantular](https://thenounproject.com/icon/coding-2996800/0). I haven't modified the icon outside of the preview options The Noun Project provides. 
