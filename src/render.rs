@@ -1,30 +1,19 @@
 use std::{cmp, iter};
 
 use super::*;
-use image::Rgba;
-use imageproc::{
-    definitions::Image,
-    drawing::{draw_filled_circle_mut, draw_filled_rect_mut, draw_text_mut, text_size, Canvas},
-    rect::Rect,
-};
+use image::{codecs::png::PngDecoder, GenericImage, GenericImageView, Rgba, RgbaImage, SubImage};
+use image::{ImageDecoder, Pixel};
 use rusttype::{Font, Scale};
 
 lazy_static! {
     static ref FONT: Font<'static> = Font::try_from_bytes(include_bytes!("../font.ttf")).unwrap();
 }
 
-const BG: Rgba<u8> = Rgba(hex!("2f3136ff"));
-const BORDER: Rgba<u8> = Rgba(hex!("202225ff"));
-const GLOBAL_SCALE: u32 = 2;
-
-const RADIUS: u32 = 4 * GLOBAL_SCALE;
-const BORDER_WIDTH: u32 = 1 * GLOBAL_SCALE;
-const LINE_SPACING: u32 = 4 * GLOBAL_SCALE;
-
-const BASE_UNIFORM_SCALE: f32 = 14.0; // discord value
-const SCALE: Scale = Scale { // Scale::uniform isn't const, so therefore i have to WET (Write Everything Twice!)
-    x: BASE_UNIFORM_SCALE * GLOBAL_SCALE as f32,
-    y: BASE_UNIFORM_SCALE * GLOBAL_SCALE as f32,
+const TEXT_SIZE: u32 = 36;
+const SCALE: Scale = Scale {
+    // Scale::uniform isn't const, so therefore i have to WET (Write Everything Twice!)
+    x: TEXT_SIZE as f32,
+    y: TEXT_SIZE as f32,
 };
 
 #[derive(Debug)]
@@ -34,45 +23,59 @@ enum LineHighlightEvent<'a> {
     Newline,
 }
 
-fn draw_rounded_box<C>(canvas: &mut C, rect: Rect, radius: u32, color: <C as Canvas>::Pixel, draw_safe_area: bool)
-where
-    C: Canvas,
-{
-    assert!(rect.width() >= 2 * radius);
-    assert!(rect.height() >= 2 * radius);
-    let offset = radius as i32;
-    let diameter = 2 * radius;
-    let safe = Rect::at(rect.left() + offset, rect.top() + offset)
-        .of_size(rect.width() - diameter, rect.height() - diameter);
-    let left = Rect::at(rect.left(), safe.top()).of_size(radius, safe.height());
-    let top = Rect::at(safe.left(), rect.top()).of_size(safe.width(), radius);
-    let right = Rect::at(safe.right() + 1, safe.top()).of_size(radius, safe.height());
-    let bottom = Rect::at(safe.left(), safe.bottom() + 1).of_size(safe.width(), radius);
-    if draw_safe_area {
-        draw_filled_rect_mut(canvas, safe, color);
+pub async fn render_command(
+    ctx: &Context,
+    channel: &Channel,
+    config: &'static LanguageConfig,
+    code: &str,
+) -> Result<(), &'static str> {
+    println!("begin render ({} bytes)", code.len());
+    let code = code.to_owned();
+    let buffer = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, &'static str> {
+        let image = render(config, &code)?;
+        let mut buffer = Vec::new();
+        // I've tested all other encodings that ``image`` comes with
+        // and the only other one that even worked was JPEG
+        // which is too moldy for text, and therefore unacceptable.
+        // PNG is the only acceptable encoding.
+        //
+        // I've hand-picked these settings through trial and error:
+        //
+        // CompressionType = Run length encoding
+        //
+        // Because most of the image is gonna be the same gray BG color
+        // especially when the image is big enough that
+        // the choice of these settings actually matter
+        //
+        // FilterType = Up (scanline above)
+        //
+        // Because text generally contains a lot of vertical lines
+        // and this measurably decreased size by about 20% with no noticeable delay
+        // for the example.ursl in URSL repository
+        let png = png::PngEncoder::new_with_quality(
+            &mut buffer,
+            png::CompressionType::Rle,
+            png::FilterType::Up,
+        );
+        png.write_image(&image, image.width(), image.height(), ColorType::Rgba8).err_as("The image failed to encode")?;
+        Ok(buffer)
+    })
+    .await
+    .err_as("The rendering task failed to join")??;
+    let bytes = &buffer[..];
+    println!("encoded png ({} bytes)", bytes.len());
+    // discord has an upload limit of 8MB. Is that actually MiB? I don't know, and i'd rather be on the safe side of that margin
+    if bytes.len() > 8_000_000 {
+        return Err("The resulting image is WAYY TOO BIG, get lost");
     }
-    draw_filled_rect_mut(canvas, left, color);
-    draw_filled_rect_mut(canvas, top, color);
-    draw_filled_rect_mut(canvas, right, color);
-    draw_filled_rect_mut(canvas, bottom, color);
-
-    draw_filled_circle_mut(canvas, (safe.left(), safe.top()), radius as i32, color);
-    draw_filled_circle_mut(canvas, (safe.left(), safe.bottom()), radius as i32, color);
-    draw_filled_circle_mut(canvas, (safe.right(), safe.top()), radius as i32, color);
-    draw_filled_circle_mut(canvas, (safe.right(), safe.bottom()), radius as i32, color);
-}
-
-fn text_width(text: &str) -> i32 {
-    // this is a horrible hack because text_size() displays the minimum bounds, i.e. what is actually *drawn*, and not the *full size*. meaning spaces don't count towards it.
-    // here i am relying on || being used as a non-ligature output of constant width, so that spaces count towards the text size.
-    // if this invariant is broken, then the output may overlap, or have unnecessary spacing.
-    let (base_width, _) = text_size(SCALE, &FONT, "||");
-    let (width, _) = text_size(SCALE, &FONT, &format!("|{text}|"));
-    width - base_width
+    send(ctx, channel, |msg| msg.add_file((bytes, "code.png")))
+        .await
+        .unwrap();
+    Ok(())
 }
 
 // Right-to-left text is completely unsupported because none of my spoken languages are right-to-left so it does not affect me personally, and is therefore seen as an inconvenience rather than a requirement.
-pub fn render(config: &LanguageConfig, code: &str) -> Result<Image<Rgba<u8>>, &'static str> {
+pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static str> {
     let mut highlighter = Highlighter::new();
     let mut events = Vec::new();
     for event in highlighter
@@ -102,7 +105,7 @@ pub fn render(config: &LanguageConfig, code: &str) -> Result<Image<Rgba<u8>>, &'
             HighlightEvent::HighlightEnd => events.push(LineHighlightEvent::Color(RESET)),
         }
     }
-    
+
     let lines = {
         let mut next_color = RESET;
         let mut lines = Vec::new();
@@ -124,49 +127,135 @@ pub fn render(config: &LanguageConfig, code: &str) -> Result<Image<Rgba<u8>>, &'
         lines
     };
 
-    // zero-width non-joiner for computing the width without potential ligatures. i only expect this to be used with monospace fonts but this i can do safely regardless
-    const ZWNJ: &str = "\u{200C}";
-
-    let dimensions = lines
+    let line_strings = lines
         .iter()
         .map(|segs| {
             segs.iter()
-                .fold(String::new(), |line, &(_, seg)| line + ZWNJ + seg)
+                .fold(String::new(), |line, &(_, seg)| line + seg)
         })
-        .map(|line| text_size(SCALE, &FONT, &line))
         .collect::<Vec<_>>();
-    let (width, height) =
-        dimensions
-            .iter()
-            .fold((0, 0), |(total_width, total_height), &(width, height)| {
-                (
-                    cmp::max(total_width, width as u32),
-                    total_height + height as u32 + LINE_SPACING,
-                )
-            });
 
-    const BORDER_RADIUS: u32 = RADIUS + BORDER_WIDTH;
-    print!("dimensions are {width}x{height}");
-    if width * height > 1000 * 1000 {
-        println!(" (too big)");
-        return Err("Image is too big, fuck off")
-    }
-    println!();
-    let mut image = Image::new(width + BORDER_RADIUS * 2, height + BORDER_RADIUS * 2);
-    let full = Rect::at(0, 0).of_size(image.width(), image.height());
-    let inner = Rect::at(BORDER_WIDTH as i32, BORDER_WIDTH as i32)
-        .of_size(width + RADIUS * 2, height + RADIUS * 2);
-    draw_rounded_box(&mut image, full, BORDER_RADIUS, BORDER, false);
-    draw_rounded_box(&mut image, inner, RADIUS, BG, true);
+    let width = line_strings.iter().fold(0, |width, line| {
+        let mut caret = 0f32;
+        let mut last_glyph = None;
 
-    let mut y = BORDER_RADIUS as i32;
-    for (segments, (_, height)) in iter::zip(lines, dimensions) {
-        let mut x = BORDER_RADIUS as i32;
-        for (color, text) in segments {
-            draw_text_mut(&mut image, color.rgb, x, y, SCALE, &FONT, text);
-            x += text_width(text);
+        for ch in line.chars() {
+            let glyph = FONT.glyph(ch).scaled(SCALE);
+            if let Some(last) = last_glyph {
+                caret += FONT.pair_kerning(SCALE, last, glyph.id());
+            }
+            caret += glyph.h_metrics().advance_width;
+            last_glyph = Some(glyph.id());
         }
-        y += height + LINE_SPACING as i32;
+        cmp::max(width, caret.ceil() as u32)
+    });
+    let height = SCALE.y as u32 * lines.len() as u32;
+    println!("dimensions are {width}x{height}");
+
+    let mut image = RgbaImage::default();
+    let safe_area = &mut border::make_image(&mut image, width, height);
+
+    println!("drawing lines");
+
+    let mut y = 0f32;
+    let ascent = FONT.v_metrics(SCALE).ascent;
+    for (line, segments) in iter::zip(line_strings, lines) {
+        let colors = segments
+            .into_iter()
+            .flat_map(|(color, text)| iter::repeat(color).take(text.len()));
+        for (color, glyph) in iter::zip(
+            colors,
+            FONT.layout(
+                &line,
+                SCALE,
+                rusttype::Point {
+                    x: 0f32,
+                    y: y + ascent,
+                },
+            ),
+        ) {
+            if let Some(bounds) = glyph.pixel_bounding_box() {
+                glyph.draw(|dx, dy, v| {
+                    let a = (v * u8::MAX as f32).trunc() as u8;
+                    let Rgb([r, g, b]) = color.rgb;
+                    let color = Rgba([r, g, b, a]);
+
+                    let x = bounds.min.x as u32 + dx;
+                    let y = bounds.min.y as u32 + dy;
+                    let mut pixel = safe_area.get_pixel(x, y);
+                    pixel.blend(&color);
+                    safe_area.put_pixel(x, y, pixel);
+                });
+            }
+        }
+        y += SCALE.y;
     }
     Ok(image)
+}
+
+mod border {
+    use super::*;
+
+    const R: u32 = 10;
+    lazy_static! {
+        static ref BORDER: RgbaImage = {
+            let bytes = include_bytes!("../border.png").as_ref();
+            let png = PngDecoder::new(bytes).unwrap();
+            let width = {
+                let (x, y) = png.dimensions();
+                assert_eq!(x, y);
+                x
+            };
+            assert_eq!(R * 2 + 1, width);
+            assert_eq!(png.color_type(), ColorType::Rgba8);
+            let mut image = RgbaImage::new(width, width);
+            png.read_image(&mut image).unwrap();
+            image
+        };
+        static ref TOP_LEFT: SubImage<&'static RgbaImage> = BORDER.view(0, 0, R, R);
+        static ref TOP_RIGHT: SubImage<&'static RgbaImage> = BORDER.view(R + 1, 0, R, R);
+        static ref BOTTOM_LEFT: SubImage<&'static RgbaImage> = BORDER.view(0, R + 1, R, R);
+        static ref BOTTOM_RIGHT: SubImage<&'static RgbaImage> = BORDER.view(R + 1, R + 1, R, R);
+        static ref TOP: SubImage<&'static RgbaImage> = BORDER.view(R, 0, 1, R);
+        static ref LEFT: SubImage<&'static RgbaImage> = BORDER.view(0, R, R, 1);
+        static ref BOTTOM: SubImage<&'static RgbaImage> = BORDER.view(R, R + 1, 1, R);
+        static ref RIGHT: SubImage<&'static RgbaImage> = BORDER.view(R + 1, R, R, 1);
+        static ref CENTER: Rgba<u8> = *BORDER.get_pixel(R, R);
+    }
+
+    pub fn make_image<'a>(
+        image: &'a mut RgbaImage,
+        width: u32,
+        height: u32,
+    ) -> SubImage<&'a mut RgbaImage> {
+        let real_width = width + R * 2;
+        let real_height = height + R * 2;
+        *image = RgbaImage::from_pixel(real_width, real_height, *CENTER);
+        // tokio::task::yield_now().await;
+        put(&mut image.sub_image(0, 0, R, R), *TOP_LEFT);
+        put(&mut image.sub_image(R + width, 0, R, R), *TOP_RIGHT);
+        put(&mut image.sub_image(0, R + height, R, R), *BOTTOM_LEFT);
+        put(
+            &mut image.sub_image(R + width, R + height, R, R),
+            *BOTTOM_RIGHT,
+        );
+        for x in 0..width {
+            put(&mut image.sub_image(R + x, 0, 1, R), *TOP);
+            put(&mut image.sub_image(R + x, R + height, 1, R), *BOTTOM);
+        }
+        for y in 0..height {
+            put(&mut image.sub_image(0, R + y, R, 1), *LEFT);
+            put(&mut image.sub_image(R + width, R + y, R, 1), *RIGHT);
+        }
+        image.sub_image(R, R, width, height)
+    }
+
+    fn put(destination: &mut SubImage<&mut RgbaImage>, source: SubImage<&RgbaImage>) {
+        assert_eq!(destination.dimensions(), source.dimensions());
+        for y in 0..source.height() {
+            for x in 0..source.width() {
+                destination.put_pixel(x, y, source.get_pixel(x, y));
+            }
+        }
+    }
 }

@@ -1,0 +1,4 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+plaintext/src/** linguist-generated
+plaintext/bindings/** linguist-vendored

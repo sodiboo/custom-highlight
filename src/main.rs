@@ -1,19 +1,23 @@
 mod render;
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use const_format::concatcp;
 use hex_literal::hex;
-use image::{codecs::png::PngEncoder, ImageEncoder, Rgba};
+use image::{codecs::png, ColorType, ImageEncoder, Rgb};
 use lazy_static::lazy_static;
-use render::render;
+use render::render_command;
 use serenity::{
     async_trait,
     builder::CreateMessage,
-    model::channel::{Channel, Message},
+    model::{
+        channel::{Channel, Message},
+        id::UserId,
+    },
     prelude::*,
 };
 use tree_sitter::{Language, Parser};
 use tree_sitter_highlight::{Highlight, HighlightConfiguration, HighlightEvent, Highlighter};
+use unicode_normalization::UnicodeNormalization;
 
 macro_rules! map {
     (@key $name:literal) => { $name };
@@ -56,12 +60,15 @@ pub trait ErrAs<E> {
     fn err_as(self, err: E) -> Self::Err;
 }
 
-impl<T, E, U> ErrAs<U> for Result<T, E> {
+impl<T, E: Debug, U> ErrAs<U> for Result<T, E> {
     type Err = Result<T, U>;
     fn err_as(self, err: U) -> Result<T, U> {
         match self {
             Ok(ok) => Ok(ok),
-            Err(_) => Err(err),
+            Err(actual_err) => {
+                println!("Error: {actual_err:?}");
+                Err(err)
+            }
         }
     }
 }
@@ -77,32 +84,36 @@ pub struct LanguageConfig {
 #[derive(Clone, Copy, Debug)]
 struct Color {
     ansi: &'static str,
-    rgb: Rgba<u8>,
+    rgb: Rgb<u8>,
 }
 
 macro_rules! colors {
     ($($name:ident = $value:literal, $hex:literal)*) => {
-        $(const $name: Color = Color { ansi: concat!("\u{001b}[", $value, "m"), rgb: Rgba(hex!($hex)) };)*
+        $(const $name: Color = Color { ansi: concat!("\u{001b}[", $value, "m"), rgb: Rgb(hex!($hex)) };)*
     }
 }
 
-// Note that there are not ANSI names, they are names that fit the specific colors discord uses for the relevant ansi code.
-colors! { // bg:
-    // last 2 digits is alpha
-    ERROR = "31;4", "ff0000ff"
-    RESET = 0, "b9bbbeff"
-    GRAY = 30, "4f545cff"
-    RED = 31, "dc322fff"
-    GREEN = 32, "859900ff"
-    YELLOW = 33, "b58900ff"
-    BLUE = 34, "268bd2ff"
-    PINK = 35, "d33682ff"
-    CYAN = 36, "2aa198ff"
-    WHITE = 37, "ffffffff"
+// Note that there are not ANSI names, they are names that fit the specific colors
+// discord uses for the relevant ansi code (and also the hex codes discord uses for them)
+//
+// ERROR is just #FF0000 because that's distinct from RED's color
+// the same way with ANSI it uses underlines to be distinct from RED
+colors! {
+    ERROR = "31;4", "ff0000"
+    RESET = 0, "b9bbbe"
+    GRAY = 30, "4f545c"
+    RED = 31, "dc322f"
+    GREEN = 32, "859900"
+    YELLOW = 33, "b58900"
+    BLUE = 34, "268bd2"
+    PINK = 35, "d33682"
+    CYAN = 36, "2aa198"
+    WHITE = 37, "ffffff"
 }
 
 lazy_static! {
     static ref LANGUAGES: HashMap<&'static str, LanguageConfig> = HashMap::from(map![
+        "" => lang![tree_sitter_plaintext;],
         ursl => lang![tree_sitter_ursl;
             comment => GRAY,
             number => CYAN,
@@ -207,14 +218,21 @@ async fn chunk_ansi(ctx: &Context, channel: &Channel, content: &str) -> serenity
     Ok(())
 }
 
-// empty, but don't remove, in case there is ever a namespace collision with another bot doing the same thing as this bot
 // the contents of this array will NOT be allowed to highlight without the +highlight prefix
-const NO_HIGHLIGHT_BY_DEFAULT: &[&str] = &[];
+const NO_HIGHLIGHT_BY_DEFAULT: &[&str] = &[""];
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        if let Some((op, lang, code)) = codeblock(&msg.content) {
+        // normalize to NFKC because rusttype doesn't support ligatures
+        let content = msg.content.nfkc().collect::<String>();
+        // normalize newlines to \n
+        let content = content
+            .lines()
+            .fold(String::new(), |out, line| out + "\n" + line);
+        // ensure no leading or trailing newlines
+        let content = content.trim_matches('\n');
+        if let Some((op, lang, code)) = codeblock(content) {
             if let Some(config) = LANGUAGES.get(lang) {
                 let channel = msg.channel(&ctx).await.unwrap();
                 if let Err(error) = command(
@@ -226,6 +244,7 @@ impl EventHandler for Handler {
                     },
                     config,
                     code,
+                    &msg,
                 )
                 .await
                 {
@@ -240,8 +259,9 @@ async fn command(
     ctx: &Context,
     channel: &Channel,
     op: &str,
-    config: &LanguageConfig,
+    config: &'static LanguageConfig,
     code: &str,
+    msg: &Message,
 ) -> Result<(), &'static str> {
     match op {
         "+highlight" => {
@@ -253,29 +273,20 @@ async fn command(
             chunk_ansi(ctx, channel, &sexp).await.unwrap();
         }
         "+render" => {
-            println!("begin render ({} bytes)", code.len());
-            // normalize newlines to \n
-            let code = code
-            .lines()
-            .fold(String::new(), |out, line| out + "\n" + line);
-            // ensure no leading or trailing newlines
-            let code = code.trim_matches('\n');
-            
-            let image = render(config, code)?;
-            let mut buffer = Vec::new();
-            let png = PngEncoder::new(&mut buffer);
-            png.write_image(
-                &image,
-                image.width(),
-                image.height(),
-                image::ColorType::Rgba8,
-            )
-            .err_as("Error when encoding the image")?;
-            let bytes = &buffer[..];
-            println!("encoded png ({} bytes)", bytes.len());
-            send(ctx, channel, |msg| msg.add_file((bytes, "code.png")))
-                .await
-                .unwrap();
+            lazy_static! {
+                static ref DENY_RENDER: Mutex<HashMap<UserId, Arc<Mutex<()>>>> =
+                    Mutex::new(HashMap::new());
+            }
+            let user_mutex = {
+                let mut map = DENY_RENDER.lock().await;
+                map.entry(msg.author.id)
+                    .or_insert_with(|| Arc::new(Mutex::new(())))
+                    .clone()
+            };
+            let _lock = user_mutex
+                .try_lock()
+                .err_as("You've already queued up a rendering task")?;
+            render_command(ctx, channel, config, code).await?;
         }
         _ => (),
     }
@@ -284,20 +295,29 @@ async fn command(
 
 fn codeblock(content: &str) -> Option<(&str, &str, &str)> {
     let content = content.trim_end();
-    if !content.ends_with("\n```") {
+    if !content.ends_with("```") {
         return None;
     }
-    let content = &content[..(content.len() - 4)];
+    let content = &content[..(content.len() - 3)];
     let (before, content) = content.split_once("```")?;
     // multiple codeblocks, nontrivial, so abort
     if content.contains("```") {
         return None;
     }
-    let (lang, code) = content.split_once("\n")?;
-    if code.trim().is_empty() {
-        return None;
+    let (lang, code) = content.split_once("\n").unwrap_or((content, ""));
+    let code = code.trim_matches('\n');
+    let (lang, code) = if code.is_empty() {
+        ("", lang)
+    } else if !lang.chars().all(char::is_alphanumeric) {
+        ("", content)
+    } else {
+        (lang, code)
+    };
+    if code.is_empty() {
+        None
+    } else {
+        Some((before.trim(), lang, code))
     }
-    Some((before.trim(), lang, code))
 }
 
 fn syntax_highlight(config: &LanguageConfig, code: &str) -> Result<String, &'static str> {

@@ -1,0 +1,22 @@
+{
+    "name": "tree-sitter-plaintext",
+    "version": "1.0.0",
+    "description": "tree-sitter grammar for plaintext",
+    "main": "bindings/node",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "Terrain",
+    "license": "MIT",
+    "dependencies": {
+        "nan": "^2.15.0"
+    },
+    "tree-sitter": [
+        {
+            "scope": "source.plaintext",
+            "file-types": [
+                "txt"
+            ]
+        }
+    ]
+}
