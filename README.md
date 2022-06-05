@@ -32,7 +32,12 @@ Now of course, that may not look too great on mobile, because (at least on iOS) 
 
 ![The above code, highlighted and rendered by my bot, to look like a discord codeblock](example+render.jpg)
 
-This bot is easily extensible to any tree-sitter grammar. It responds to any message that is a codeblock (in a language it knows) and optionally a command it recognizes. ``+parse`` will just parse the codeblock's contents and dump the root node as an S-expression, and ``+highlight`` will print the ANSI highlighting. If there is no command at all and the message is a pure codeblock, it will default to ``+highlight``. If you're on mobile, you can also do ``+render`` to render it to an image, which will be easier to view on more platforms.
+This bot is easily extensible to any tree-sitter grammar. It responds to any message that is a codeblock (in a language it knows) and optionally a command it recognizes, defaulting to ``+highlight`` for languages that are determined to be "highlight by default".
+
+- ``+highlight`` will print the ANSI highlighting of the codeblock, and chunk it into multiple messages if it's too long to fit in a single message (since the ANSI escape codes can easily increase the length fast, with about 8 extra chars per token in the tree)
+- ``+parse`` will just parse the codeblock's contents and dump the tree in a readable format, primarily for use on mobile
+- ``+prettyparse`` is the same as ``+parse``, but it also colors the output nicely, for use on desktop
+- ``+render`` will render the highlighted text to an image, intended for mobile use where ANSI highlighting is not supported
 
 The color scheme of this bot's highlighting is generally based loosely on vscode's default theme of Dark+, with some compromises being made. Most notably, all literals are ``CYAN`` to match discord's default language settings.
 

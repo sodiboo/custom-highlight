@@ -1,5 +1,5 @@
 mod render;
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, iter, sync::Arc};
 
 use const_format::concatcp;
 use hex_literal::hex;
@@ -15,7 +15,7 @@ use serenity::{
     },
     prelude::*,
 };
-use tree_sitter::{Language, Parser};
+use tree_sitter::{Language, Parser, TreeCursor};
 use tree_sitter_highlight::{Highlight, HighlightConfiguration, HighlightEvent, Highlighter};
 use unicode_normalization::UnicodeNormalization;
 
@@ -133,7 +133,6 @@ lazy_static! {
             "punctuation.bracket" => GRAY,
         ],
         urcl => lang![tree_sitter_urcl;
-
             comment => GRAY,
             header => PINK,
             constant => YELLOW,
@@ -144,6 +143,7 @@ lazy_static! {
             label => YELLOW,
             register => CYAN,
             "register.special" => CYAN,
+            address => CYAN,
             instruction => BLUE,
             string => CYAN,
             "string.special" => CYAN,
@@ -226,6 +226,7 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         // normalize to NFKC because rusttype doesn't support ligatures
         let content = msg.content.nfkc().collect::<String>();
+
         // normalize newlines to \n
         let content = content
             .lines()
@@ -268,9 +269,13 @@ async fn command(
             let formatted = syntax_highlight(config, code)?;
             chunk_ansi(ctx, channel, &formatted).await.unwrap()
         }
+        "+prettyparse" => {
+            let formatted = pretty_parse(config, code, true)?;
+            chunk_ansi(ctx, channel, &formatted).await.unwrap();
+        }
         "+parse" => {
-            let sexp = sexp(config, code)?;
-            chunk_ansi(ctx, channel, &sexp).await.unwrap();
+            let formatted = pretty_parse(config, code, false)?;
+            chunk_ansi(ctx, channel, &formatted).await.unwrap();
         }
         "+render" => {
             lazy_static! {
@@ -336,9 +341,95 @@ fn syntax_highlight(config: &LanguageConfig, code: &str) -> Result<String, &'sta
     Ok(output)
 }
 
-fn sexp(config: &LanguageConfig, code: &str) -> Result<String, &'static str> {
+fn pretty_parse(
+    config: &LanguageConfig,
+    code: &str,
+    colored: bool,
+) -> Result<String, &'static str> {
     let mut parser = Parser::new();
     parser.set_language(config.language).err_as(TS_ERROR)?;
     let tree = parser.parse(code, None).ok_or(TS_ERROR)?;
-    Ok(tree.root_node().to_sexp())
+    let mut cursor = tree.walk();
+    Ok(pretty_parse_node(
+        &mut cursor,
+        0,
+        String::new(),
+        code,
+        colored,
+    ))
+}
+
+fn pretty_parse_node(
+    cursor: &mut TreeCursor,
+    indent: usize,
+    mut string: String,
+    code: &str,
+    colored: bool,
+) -> String {
+    const INDENT: &str = "    ";
+    string.extend(iter::repeat(INDENT).take(indent));
+    if let Some(field_name) = cursor.field_name() {
+        if colored {
+            string.push_str(YELLOW.ansi);
+        }
+        string.push_str(field_name);
+        string.push_str(": ");
+        if colored {
+            string.push_str(RESET.ansi);
+        }
+    }
+    if colored {
+        if cursor.node().is_error() {
+            string.push_str(RED.ansi);
+        } else if cursor.node().is_extra() {
+            string.push_str(GRAY.ansi);
+        } else {
+            string.push_str(GREEN.ansi);
+        }
+    }
+    string.push_str(cursor.node().kind());
+    if colored {
+        string.push_str(RESET.ansi);
+    }
+
+    if cursor.goto_first_child() {
+        loop {
+            if cursor.field_name().is_some()
+                || cursor.node().is_named()
+                || cursor.node().child_count() > 0
+            {
+                string.push('\n');
+                string = pretty_parse_node(cursor, indent + 1, string, code, colored);
+            }
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+
+        cursor.goto_parent();
+    } else {
+        if colored {
+            string.push_str(PINK.ansi);
+        }
+        string.push_str(" [");
+        let tree_sitter::Point { row, column } = cursor.node().start_position();
+        string.push_str(&(row + 1).to_string());
+        string.push_str(", ");
+        string.push_str(&(column + 1).to_string());
+        string.push_str("] ");
+        if cursor.node().is_named() {
+            if colored {
+                if cursor.node().is_extra() {
+                    string.push_str(GRAY.ansi);
+                } else {
+                    string.push_str(BLUE.ansi);
+                }
+            }
+            string.push_str(&code[cursor.node().byte_range()]);
+            if colored {
+                string.push_str(RESET.ansi);
+            }
+        }
+    }
+    string
 }

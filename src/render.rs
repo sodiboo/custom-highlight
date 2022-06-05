@@ -33,7 +33,7 @@ pub async fn render_command(
     let code = code.to_owned();
     let buffer = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, &'static str> {
         let image = render(config, &code)?;
-        let mut buffer = Vec::new();
+        println!("Begin encode: {}x{}", image.width(), image.height());
         // I've tested all other encodings that ``image`` comes with
         // and the only other one that even worked was JPEG
         // which is too moldy for text, and therefore unacceptable.
@@ -52,6 +52,7 @@ pub async fn render_command(
         // Because text generally contains a lot of vertical lines
         // and this measurably decreased size by about 20% with no noticeable delay
         // for the example.ursl in URSL repository
+        let mut buffer = Vec::new();
         let png = png::PngEncoder::new_with_quality(
             &mut buffer,
             png::CompressionType::Rle,
@@ -154,8 +155,6 @@ pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static
 
     let mut image = RgbaImage::default();
     let safe_area = &mut border::make_image(&mut image, width, height);
-
-    println!("drawing lines");
 
     let mut y = 0f32;
     let ascent = FONT.v_metrics(SCALE).ascent;
