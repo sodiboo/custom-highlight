@@ -146,7 +146,7 @@ lazy_static! {
             address => CYAN,
             instruction => BLUE,
             string => CYAN,
-            "string.special" => CYAN,
+            "string.special" => BLUE,
             operator => GRAY,
             "punctuation.bracket" => GRAY,
             identifier => WHITE,
@@ -269,11 +269,11 @@ async fn command(
             let formatted = syntax_highlight(config, code)?;
             chunk_ansi(ctx, channel, &formatted).await.unwrap()
         }
-        "+prettyparse" => {
+        "+parse" => {
             let formatted = pretty_parse(config, code, true)?;
             chunk_ansi(ctx, channel, &formatted).await.unwrap();
         }
-        "+parse" => {
+        "+pparse" => {
             let formatted = pretty_parse(config, code, false)?;
             chunk_ansi(ctx, channel, &formatted).await.unwrap();
         }
@@ -328,14 +328,26 @@ fn codeblock(content: &str) -> Option<(&str, &str, &str)> {
 fn syntax_highlight(config: &LanguageConfig, code: &str) -> Result<String, &'static str> {
     let mut output = String::new();
     let mut highlighter = Highlighter::new();
+    let mut colors = Vec::new();
+    colors.push(RESET);
+    fn last(colors: &mut Vec<Color>) -> &str {
+        println!("{colors:?}");
+        colors.last().unwrap().ansi
+    }
     for event in highlighter
         .highlight(&config.highlight, code.as_bytes(), None, |_| None)
         .err_as(TS_ERROR)?
     {
         output += match event.err_as(TS_ERROR)? {
-            HighlightEvent::HighlightStart(Highlight(u)) => config.formats[u].ansi,
+            HighlightEvent::HighlightStart(Highlight(u)) => {
+                colors.push(config.formats[u]);
+                last(&mut colors)
+            }
             HighlightEvent::Source { start, end } => &code[start..end],
-            HighlightEvent::HighlightEnd => RESET.ansi,
+            HighlightEvent::HighlightEnd => {
+                colors.pop();
+                last(&mut colors)
+            }
         }
     }
     Ok(output)
@@ -392,12 +404,14 @@ fn pretty_parse_node(
         string.push_str(RESET.ansi);
     }
 
-    if cursor.goto_first_child() {
+    let printed = cursor.goto_first_child() && {
+        let mut printed = false;
         loop {
             if cursor.field_name().is_some()
                 || cursor.node().is_named()
                 || cursor.node().child_count() > 0
             {
+                printed = true;
                 string.push('\n');
                 string = pretty_parse_node(cursor, indent + 1, string, code, colored);
             }
@@ -405,9 +419,10 @@ fn pretty_parse_node(
                 break;
             }
         }
-
         cursor.goto_parent();
-    } else {
+        printed
+    };
+    if !printed {
         if colored {
             string.push_str(PINK.ansi);
         }

@@ -36,5 +36,5 @@ features = [ # default except framework, standard_framework
 ]
 
 [dependencies.tokio]
-version = "1.18.2"
-features = ["full"]
+version = "1.19.2"
+features = [ "full" ]

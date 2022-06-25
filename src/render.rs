@@ -58,7 +58,8 @@ pub async fn render_command(
             png::CompressionType::Rle,
             png::FilterType::Up,
         );
-        png.write_image(&image, image.width(), image.height(), ColorType::Rgba8).err_as("The image failed to encode")?;
+        png.write_image(&image, image.width(), image.height(), ColorType::Rgba8)
+            .err_as("The image failed to encode")?;
         Ok(buffer)
     })
     .await
@@ -79,13 +80,19 @@ pub async fn render_command(
 pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static str> {
     let mut highlighter = Highlighter::new();
     let mut events = Vec::new();
+    let mut colors = Vec::new();
+    colors.push(RESET);
+    fn color(events: &mut Vec<LineHighlightEvent>, colors: &mut Vec<Color>) {
+        events.push(LineHighlightEvent::Color(*colors.last().unwrap()));
+    }
     for event in highlighter
         .highlight(&config.highlight, code.as_bytes(), None, |_| None)
         .err_as(TS_ERROR)?
     {
         match event.err_as(TS_ERROR)? {
             HighlightEvent::HighlightStart(Highlight(i)) => {
-                events.push(LineHighlightEvent::Color(config.formats[i]))
+                colors.push(config.formats[i]);
+                color(&mut events, &mut colors);
             }
             HighlightEvent::Source { start, end } => {
                 let text = &code[start..end];
@@ -103,7 +110,10 @@ pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static
                     }));
                 }
             }
-            HighlightEvent::HighlightEnd => events.push(LineHighlightEvent::Color(RESET)),
+            HighlightEvent::HighlightEnd => {
+                colors.pop();
+                color(&mut events, &mut colors);
+            }
         }
     }
 
