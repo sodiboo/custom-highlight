@@ -245,6 +245,8 @@ dependencies = [
  "hex-literal",
  "image",
  "lazy_static",
+ "non-empty-vec",
+ "owoify_rs",
  "rusttype",
  "serenity",
  "tokio",
@@ -449,9 +451,9 @@ dependencies = [
 
 [[package]]
 name = "gif"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3a7187e78088aead22ceedeee99779455b23fc231fe13ec443f99bb71694e5b"
+checksum = "3edd93c6756b4dfaf2709eafcc345ba2636565295c198a9cfbf75fa5e3e00b06"
 dependencies = [
  "color_quant",
  "weezl",
@@ -759,6 +761,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "non-empty-vec"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ceeba69aa8d4c53cdceeac8f17eb2656bb88b468bbe6c0889d34edfdea26ec8b"
+
+[[package]]
 name = "num-integer"
 version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -840,6 +848,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f923fb806c46266c02ab4a5b239735c144bdeda724a50ed058e5226f594cde3"
 dependencies = [
  "ttf-parser",
+]
+
+[[package]]
+name = "owoify_rs"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60cff2350875a9ccee0655bc548b37bbb35cb1a95697e587a1e06639c08e677b"
+dependencies = [
+ "lazy_static",
+ "rand",
+ "regex",
 ]
 
 [[package]]
@@ -1450,9 +1469,9 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.20.7"
+version = "0.20.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "549a9faf45679ad50b7f603253635598cf5e007d8ceb806a23f95355938f76a0"
+checksum = "268bf3e3ca0c09e5d21b59c2638e12cb6dcf7ea2681250a696a2d0936cb57ba0"
 dependencies = [
  "cc",
  "regex",
@@ -1489,7 +1508,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-urcl"
 version = "0.0.1"
-source = "git+https://github.com/Terrain2/tree-sitter-urcl#af53d60fe6dd9242619bd4ce8ef5f490c70cb9cf"
+source = "git+https://github.com/Terrain2/tree-sitter-urcl#794e88caee3d3fa9cb78dfd7f26698f46f6e98d5"
 dependencies = [
  "cc",
  "tree-sitter",
@@ -1498,7 +1517,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-ursl"
 version = "0.0.1"
-source = "git+https://github.com/Terrain2/tree-sitter-ursl#840563627e99f4fde2c128faf1a002eb2f8ed0fa"
+source = "git+https://github.com/Terrain2/tree-sitter-ursl#002f4fda20c2a7016b7b433161740f7ee4224509"
 dependencies = [
  "cc",
  "tree-sitter",

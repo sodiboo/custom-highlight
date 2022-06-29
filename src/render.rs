@@ -28,6 +28,8 @@ pub async fn render_command(
     channel: &Channel,
     config: &'static LanguageConfig,
     code: &str,
+    reply_to: ReplyMethod<'_>,
+    add_components: bool,
 ) -> Result<(), &'static str> {
     println!("begin render ({} bytes)", code.len());
     let code = code.to_owned();
@@ -70,9 +72,28 @@ pub async fn render_command(
     if bytes.len() > 8_000_000 {
         return Err("The resulting image is WAYY TOO BIG, get lost");
     }
-    send(ctx, channel, |msg| msg.add_file((bytes, "code.png")))
+    match reply_to {
+        ReplyMethod::EphemeralFollowup(interaction) => create_followup_message(ctx, interaction, |msg| {
+            println!("ephemeral msg");
+            msg.ephemeral(true).add_file((bytes, "code.png"))
+        })
         .await
-        .unwrap();
+        .unwrap(),
+        ReplyMethod::PublicReference(referenced) => send(ctx, channel, |msg| {
+            if add_components {
+                msg.components(|c| {
+                    c.create_action_row(|row| {
+                        add_command_buttons_except(row, referenced.id, Command::Render, false)
+                    })
+                });
+            }
+            msg.reference_message(referenced)
+                .allowed_mentions(|mentions| mentions.replied_user(false))
+                .add_file((bytes, "code.png"))
+        })
+        .await
+        .unwrap(),
+    };
     Ok(())
 }
 
@@ -80,11 +101,7 @@ pub async fn render_command(
 pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static str> {
     let mut highlighter = Highlighter::new();
     let mut events = Vec::new();
-    let mut colors = Vec::new();
-    colors.push(RESET);
-    fn color(events: &mut Vec<LineHighlightEvent>, colors: &mut Vec<Color>) {
-        events.push(LineHighlightEvent::Color(*colors.last().unwrap()));
-    }
+    let mut colors = ne_vec![RESET];
     for event in highlighter
         .highlight(&config.highlight, code.as_bytes(), None, |_| None)
         .err_as(TS_ERROR)?
@@ -92,7 +109,7 @@ pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static
         match event.err_as(TS_ERROR)? {
             HighlightEvent::HighlightStart(Highlight(i)) => {
                 colors.push(config.formats[i]);
-                color(&mut events, &mut colors);
+                events.push(LineHighlightEvent::Color(*colors.last()))
             }
             HighlightEvent::Source { start, end } => {
                 let text = &code[start..end];
@@ -112,7 +129,7 @@ pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static
             }
             HighlightEvent::HighlightEnd => {
                 colors.pop();
-                color(&mut events, &mut colors);
+                events.push(LineHighlightEvent::Color(*colors.last()))
             }
         }
     }
