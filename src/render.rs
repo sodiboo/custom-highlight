@@ -73,12 +73,14 @@ pub async fn render_command(
         return Err("The resulting image is WAYY TOO BIG, get lost");
     }
     match reply_to {
-        ReplyMethod::EphemeralFollowup(interaction) => create_followup_message(ctx, interaction, |msg| {
-            println!("ephemeral msg");
-            msg.ephemeral(true).add_file((bytes, "code.png"))
-        })
-        .await
-        .unwrap(),
+        ReplyMethod::EphemeralFollowup(interaction) => {
+            create_followup_message(ctx, interaction, |msg| {
+                println!("ephemeral msg");
+                msg.ephemeral(true).add_file((bytes, "code.png"))
+            })
+            .await
+            .unwrap()
+        }
         ReplyMethod::PublicReference(referenced) => send(ctx, channel, |msg| {
             if add_components {
                 msg.components(|c| {
@@ -99,40 +101,60 @@ pub async fn render_command(
 
 // Right-to-left text is completely unsupported because none of my spoken languages are right-to-left so it does not affect me personally, and is therefore seen as an inconvenience rather than a requirement.
 pub fn render(config: &LanguageConfig, code: &str) -> Result<RgbaImage, &'static str> {
-    let mut highlighter = Highlighter::new();
-    let mut events = Vec::new();
-    let mut colors = ne_vec![RESET];
-    for event in highlighter
-        .highlight(&config.highlight, code.as_bytes(), None, |_| None)
-        .err_as(TS_ERROR)?
-    {
-        match event.err_as(TS_ERROR)? {
-            HighlightEvent::HighlightStart(Highlight(i)) => {
-                colors.push(config.formats[i]);
-                events.push(LineHighlightEvent::Color(*colors.last()))
-            }
-            HighlightEvent::Source { start, end } => {
-                let text = &code[start..end];
-                let (first, lines) = text
-                    .split_once("\n")
-                    .map(|(first, lines)| (first, Some(lines)))
-                    .unwrap_or((text, None));
-                events.push(LineHighlightEvent::Segment(first));
-                if let Some(lines) = lines {
-                    events.extend(lines.split("\n").flat_map(|line| {
-                        [
-                            LineHighlightEvent::Newline,
-                            LineHighlightEvent::Segment(line),
-                        ]
-                    }));
+    let events = match config.highlight {
+        HighlightType::TreeSitter(ref highlight) => {
+            let mut highlighter = Highlighter::new();
+            let mut events = Vec::new();
+            let mut colors = ne_vec![RESET];
+            for event in highlighter
+                .highlight(highlight, code.as_bytes(), None, |_| None)
+                .err_as(TS_ERROR)?
+            {
+                match event.err_as(TS_ERROR)? {
+                    HighlightEvent::HighlightStart(Highlight(i)) => {
+                        colors.push(config.formats[i]);
+                        events.push(LineHighlightEvent::Color(*colors.last()))
+                    }
+                    HighlightEvent::Source { start, end } => {
+                        let text = &code[start..end];
+                        let (first, lines) = text
+                            .split_once("\n")
+                            .map_or((text, None), |(first, lines)| (first, Some(lines)));
+                        events.push(LineHighlightEvent::Segment(first));
+                        if let Some(lines) = lines {
+                            events.extend(lines.split("\n").flat_map(|line| {
+                                [
+                                    LineHighlightEvent::Newline,
+                                    LineHighlightEvent::Segment(line),
+                                ]
+                            }));
+                        }
+                    }
+                    HighlightEvent::HighlightEnd => {
+                        colors.pop();
+                        events.push(LineHighlightEvent::Color(*colors.last()))
+                    }
                 }
             }
-            HighlightEvent::HighlightEnd => {
-                colors.pop();
-                events.push(LineHighlightEvent::Color(*colors.last()))
-            }
+            events
         }
-    }
+        HighlightType::Plaintext => {
+            let (first, lines) = code
+                .split_once("\n")
+                .map_or((code, None), |(first, lines)| (first, Some(lines)));
+            let mut events = Vec::new();
+            events.push(LineHighlightEvent::Segment(first));
+            if let Some(lines) = lines {
+                events.extend(lines.split("\n").flat_map(|line| {
+                    [
+                        LineHighlightEvent::Newline,
+                        LineHighlightEvent::Segment(line),
+                    ]
+                }));
+            }
+            events
+        }
+    };
 
     let lines = {
         let mut next_color = RESET;

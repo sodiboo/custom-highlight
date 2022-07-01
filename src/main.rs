@@ -21,7 +21,7 @@ use serenity::{
         interactions::{
             application_command::{ApplicationCommand, ApplicationCommandType},
             message_component::{ButtonStyle, ComponentType, MessageComponentInteraction},
-            Interaction,
+            Interaction, InteractionResponseType,
         },
         Permissions,
     },
@@ -34,10 +34,10 @@ use unicode_normalization::UnicodeNormalization;
 macro_rules! owo {
     ($($t:tt)*) => {
         format!($($t)*)
-        .owoify(OwoifyLevel::Uvu)
-        .owoify(OwoifyLevel::Uvu)
-        .owoify(OwoifyLevel::Uvu)
-        .owoify(OwoifyLevel::Uvu)
+            .owoify(OwoifyLevel::Uvu)
+            .owoify(OwoifyLevel::Uvu)
+            .owoify(OwoifyLevel::Uvu)
+            .owoify(OwoifyLevel::Uvu)
     }
 }
 
@@ -70,9 +70,9 @@ macro_rules! lang {
         let (recognized_names, formats): (&[&str], &[Color]) = unzip![error => ERROR, $($t)*];
         highlight.configure(recognized_names);
         LanguageConfig {
-            highlight,
+            highlight: HighlightType::TreeSitter(highlight),
             formats,
-            language,
+            language: Some(language),
         }
     }};
 }
@@ -97,10 +97,15 @@ impl<T, E: Debug, U> ErrAs<U> for Result<T, E> {
 
 pub const TS_ERROR: &str = "internal error from tree-sitter (not a syntax error)";
 
+enum HighlightType {
+    TreeSitter(HighlightConfiguration),
+    Plaintext,
+}
+
 pub struct LanguageConfig {
-    highlight: HighlightConfiguration,
+    highlight: HighlightType,
     formats: &'static [Color],
-    language: Language,
+    language: Option<Language>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -141,7 +146,13 @@ colors! {
 
 lazy_static! {
     static ref LANGUAGES: HashMap<&'static str, LanguageConfig> = HashMap::from(map![
-        "" => lang![tree_sitter_plaintext;],
+        "" => {
+            LanguageConfig {
+                highlight: HighlightType::Plaintext,
+                formats: &[],
+                language: None,
+            }
+        },
         ursl => lang![tree_sitter_ursl;
             comment => GRAY,
             number => LIGHT_GREEN,
@@ -165,7 +176,7 @@ lazy_static! {
             header => PINK,
             constant => YELLOW,
             number => LIGHT_GREEN,
-            relative => CYAN,
+            relative => LIGHT_GREEN,
             port => DARK_GREEN,
             macro => PINK,
             label => YELLOW,
@@ -226,7 +237,7 @@ async fn send<'a>(
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ReplyMethod<'a> {
     PublicReference(&'a Message),
     EphemeralFollowup(&'a Interaction),
@@ -407,7 +418,7 @@ fn add_command_buttons_except(
     delete_button(row, ephemeralish)
 }
 
-async fn create_intial_response<'a, F>(
+async fn create_interaction_response<'a, F>(
     ctx: &Context,
     interaction: &Interaction,
     f: F,
@@ -448,11 +459,28 @@ where
     }
 }
 
-async fn defer(ctx: &Context, interaction: &Interaction) -> serenity::Result<()> {
-    match interaction {
-        Interaction::MessageComponent(interaction) => interaction.defer(ctx).await,
-        Interaction::ApplicationCommand(interaction) => interaction.defer(ctx).await,
-        _ => panic!("bad interaction type"),
+async fn defer(ctx: &Context, interaction: &Interaction, ephemeral: bool) -> serenity::Result<()> {
+    if ephemeral {
+        create_interaction_response(ctx, interaction, |response| {
+            response
+                .kind(match interaction {
+                    Interaction::MessageComponent(_) => {
+                        InteractionResponseType::DeferredUpdateMessage
+                    }
+                    Interaction::ApplicationCommand(_) => {
+                        InteractionResponseType::DeferredChannelMessageWithSource
+                    }
+                    _ => panic!("bad interaction type"),
+                })
+                .interaction_response_data(|data| data.ephemeral(true))
+        })
+        .await
+    } else {
+        match interaction {
+            Interaction::MessageComponent(interaction) => interaction.defer(ctx).await,
+            Interaction::ApplicationCommand(interaction) => interaction.defer(ctx).await,
+            _ => panic!("bad interaction type"),
+        }
     }
 }
 
@@ -516,11 +544,7 @@ impl EventHandler for Handler {
                             message.reply(&ctx, error).await.unwrap();
                         }
                     }
-                } else if !NO_AUTO_RESPOND.contains(&lang)
-                    // allow bots to do this if they intentionally don't want a codeblock responded to.
-                    // users can always press delete anyways
-                    && after.trim() != "supress"
-                {
+                } else if !NO_AUTO_RESPOND.contains(&lang) && !message.author.bot {
                     send(&ctx, &channel, |msg| {
                         // empty messages are not allowed, so i guess just send a zwsp lol
                         msg.reference_message(&message)
@@ -666,7 +690,7 @@ impl EventHandler for Handler {
                         &original_interaction,
                         &channel,
                         &referenced,
-                        false,
+                        true,
                         false,
                     )
                     .await
@@ -708,12 +732,18 @@ impl EventHandler for Handler {
                 };
                 println!("{} clicked to execute {command:?}", interaction.user.tag());
                 let channel = interaction.channel_id.to_channel(&ctx).await.unwrap();
-                let message = get_ref(
-                    &ctx,
-                    &channel,
-                    interaction.data.target_id.unwrap().to_message_id(),
-                )
-                .await;
+                let target = interaction.data.target_id.unwrap().to_message_id();
+                let message = if let Some(message) = interaction.data.resolved.messages.get(&target)
+                {
+                    message.clone()
+                } else {
+                    get_ref(
+                        &ctx,
+                        &channel,
+                        interaction.data.target_id.unwrap().to_message_id(),
+                    )
+                    .await
+                };
                 match run_command_from_interaction(
                     &ctx,
                     command,
@@ -780,7 +810,7 @@ async fn run_command_from_interaction<'a>(
     if let Some((_, lang, code, _)) = codeblock(&referenced.content) {
         if let Some(lang) = LANGUAGES.get(lang) {
             if command == Command::Render && !send_as_followup {
-                create_intial_response(&ctx, &interaction, |response| {
+                create_interaction_response(&ctx, &interaction, |response| {
                     response.interaction_response_data(|msg| {
                     msg.ephemeral(true);
                     let bounds = |max_len| {
@@ -796,7 +826,7 @@ async fn run_command_from_interaction<'a>(
                     }})
                 }).await.unwrap();
             } else {
-                defer(&ctx, &interaction).await.unwrap();
+                defer(&ctx, &interaction, send_as_followup).await.unwrap();
             }
             if let Err(why) = run_command(
                 &ctx,
@@ -942,26 +972,31 @@ fn codeblock(content: &str) -> Option<(&str, &str, &str, &str)> {
 }
 
 fn syntax_highlight(config: &LanguageConfig, code: &str) -> Result<String, &'static str> {
-    let mut output = String::new();
-    let mut highlighter = Highlighter::new();
-    let mut colors = ne_vec![RESET];
-    for event in highlighter
-        .highlight(&config.highlight, code.as_bytes(), None, |_| None)
-        .err_as(TS_ERROR)?
-    {
-        output += match event.err_as(TS_ERROR)? {
-            HighlightEvent::HighlightStart(Highlight(u)) => {
-                colors.push(config.formats[u]);
-                colors.last().ansi
+    match config.highlight {
+        HighlightType::TreeSitter(ref highlight) => {
+            let mut output = String::new();
+            let mut highlighter = Highlighter::new();
+            let mut colors = ne_vec![RESET];
+            for event in highlighter
+                .highlight(highlight, code.as_bytes(), None, |_| None)
+                .err_as(TS_ERROR)?
+            {
+                output += match event.err_as(TS_ERROR)? {
+                    HighlightEvent::HighlightStart(Highlight(u)) => {
+                        colors.push(config.formats[u]);
+                        colors.last().ansi
+                    }
+                    HighlightEvent::Source { start, end } => &code[start..end],
+                    HighlightEvent::HighlightEnd => {
+                        colors.pop();
+                        colors.last().ansi
+                    }
+                }
             }
-            HighlightEvent::Source { start, end } => &code[start..end],
-            HighlightEvent::HighlightEnd => {
-                colors.pop();
-                colors.last().ansi
-            }
+            Ok(output)
         }
+        HighlightType::Plaintext => Ok(code.to_string()),
     }
-    Ok(output)
 }
 
 fn pretty_parse(
@@ -970,7 +1005,13 @@ fn pretty_parse(
     colored: bool,
 ) -> Result<String, &'static str> {
     let mut parser = Parser::new();
-    parser.set_language(config.language).err_as(TS_ERROR)?;
+    parser
+        .set_language(
+            config
+                .language
+                .ok_or("This language doesn't have parsing support")?,
+        )
+        .err_as(TS_ERROR)?;
     let tree = parser.parse(code, None).ok_or(TS_ERROR)?;
     let mut cursor = tree.walk();
     Ok(pretty_parse_node(
