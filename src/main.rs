@@ -44,7 +44,7 @@ macro_rules! owo {
 macro_rules! map {
     (@key $name:literal) => { $name };
     (@key $name:ident) => { stringify!($name) };
-    (@m $callback:ident ($($args:tt)*) $($k:tt => $v:expr,)*) => { $callback!($($args)* $((map!(@key $k), $v),)*) };
+    (@m $callback:ident ($($args:tt)*) $($k:tt => $v:expr),* $(,)?) => { $callback!($($args)* $((map!(@key $k), $v),)*) };
     (@arr $($t:tt)*) => { [$($t)*] };
     ($($t:tt)*) => { map!(@m map (@arr) $($t)*) };
 
@@ -198,6 +198,13 @@ lazy_static! {
             label => YELLOW,
             number => LIGHT_GREEN,
             keyword => PINK,
+        ],
+        hexagn => lang![tree_sitter_hexagn;
+            comment => GRAY,
+            number => LIGHT_GREEN,
+            func_name => YELLOW,
+            keyword => PINK,
+            type => DARK_GREEN,
         ],
     ]);
 }

@@ -10,6 +10,7 @@ tree-sitter = "0.20.6"
 tree-sitter-highlight = "0.20.1"
 tree-sitter-urcl = { git = "https://github.com/Terrain2/tree-sitter-urcl" }
 tree-sitter-ursl = { git = "https://github.com/Terrain2/tree-sitter-ursl" }
+tree-sitter-hexagn = { git = "https://github.com/emm312/tree-sitter-hexagn" }
 tree-sitter-phinix = { git = "https://github.com/Terrain2/tree-sitter-phinix" }
 
 image = "0.24.2"
