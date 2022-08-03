@@ -15,14 +15,20 @@ use serenity::{
         CreateMessage,
     },
     model::{
+        application::{
+            // these are aliases as the old name not because i'm lazy when updating for deprecations
+            // but rather because i have an enum Command and i don't wanna rename it.
+            // ApplicationCommand is separate from my own Command and i'm keeping that naming.
+            command::{Command as ApplicationCommand, CommandType as ApplicationCommandType},
+            component::{ButtonStyle, ComponentType},
+            interaction::{
+                message_component::MessageComponentInteraction, Interaction,
+                InteractionResponseType,
+            },
+        },
         channel::{Channel, Message, ReactionType},
         gateway::Ready,
         id::{MessageId, UserId},
-        interactions::{
-            application_command::{ApplicationCommand, ApplicationCommandType},
-            message_component::{ButtonStyle, ComponentType, MessageComponentInteraction},
-            Interaction, InteractionResponseType,
-        },
         Permissions,
     },
     prelude::*,
