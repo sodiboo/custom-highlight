@@ -85,7 +85,13 @@ pub async fn render_command(
             if add_components {
                 msg.components(|c| {
                     c.create_action_row(|row| {
-                        add_command_buttons_except(row, referenced.id, Command::Render, false)
+                        row.create_button(|button| {
+                            button
+                                .custom_id("highlight")
+                                .emoji('📋')
+                                .label("Highlight as ANSI")
+                                .style(ButtonStyle::Primary)
+                        })
                     })
                 });
             }

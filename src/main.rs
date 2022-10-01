@@ -11,7 +11,7 @@ use render::render_command;
 use serenity::{
     async_trait,
     builder::{
-        CreateActionRow, CreateInteractionResponse, CreateInteractionResponseFollowup,
+        CreateInteractionResponse, CreateInteractionResponseFollowup,
         CreateMessage,
     },
     model::{
@@ -26,7 +26,7 @@ use serenity::{
                 InteractionResponseType,
             },
         },
-        channel::{Channel, Message, ReactionType},
+        channel::{Channel, Message},
         gateway::Ready,
         id::{MessageId, UserId},
         Permissions,
@@ -261,11 +261,8 @@ async fn send_chunked_message_with_commands(
     channel: &Channel,
     chunks: Vec<String>,
     reply_to: ReplyMethod<'_>,
-    except: Option<Command>,
-    ephemeralish: bool,
 ) -> serenity::Result<()> {
     let first = 0;
-    let last = chunks.len() - 1;
     for i in 0..chunks.len() {
         let chunk = &chunks[i];
         match reply_to {
@@ -273,15 +270,6 @@ async fn send_chunked_message_with_commands(
                 if i == first {
                     msg.reference_message(reply_to)
                         .allowed_mentions(|f| f.replied_user(false));
-                }
-                if i == last {
-                    if let Some(except) = except {
-                        msg.components(|c| {
-                            c.create_action_row(|row| {
-                                add_command_buttons_except(row, reply_to.id, except, ephemeralish)
-                            })
-                        });
-                    }
                 }
                 msg.content(&chunk)
             })
@@ -334,102 +322,10 @@ enum Command {
     PlainParse,
 }
 
-const COMMANDS: &[Command] = &[
-    Command::Highlight,
-    Command::Render,
-    Command::PrettyParse,
-    Command::PlainParse,
-];
-
 const COMMAND_NAME_HIGHLIGHT: &str = "Highlight Codeblock";
 const COMMAND_NAME_PLAIN_PARSE: &str = "Parse Syntax";
 const COMMAND_NAME_PRETTY_PARSE: &str = "Pretty Parse Syntax";
 const COMMAND_NAME_RENDER: &str = "Render Codeblock";
-
-impl Command {
-    fn add_button(
-        self,
-        row: &mut CreateActionRow,
-        id: MessageId,
-        ephemeralish: bool,
-    ) -> &mut CreateActionRow {
-        let suffix = if ephemeralish { "-ephemeralish" } else { "" };
-        match self {
-            Command::Highlight => row.create_button(|button| {
-                button
-                    .custom_id(format!("highlight-{id}{suffix}"))
-                    .emoji('🖍')
-                    .label("Highlight")
-                    .style(ButtonStyle::Primary)
-            }),
-            Command::Render => row.create_button(|button| {
-                button
-                    .custom_id(format!("render-{id}{suffix}"))
-                    .emoji('🖼')
-                    .label("Render")
-                    .style(ButtonStyle::Success)
-            }),
-            Command::PrettyParse => row.create_button(|button| {
-                button
-                    .custom_id(format!("pretty-parse-{id}{suffix}"))
-                    .emoji('🔣')
-                    .label("Pretty Parse")
-                    .style(ButtonStyle::Secondary)
-            }),
-            Command::PlainParse => row.create_button(|button| {
-                button
-                    .custom_id(format!("plain-parse-{id}{suffix}"))
-                    .emoji('📱')
-                    .label("Parse")
-                    .style(ButtonStyle::Secondary)
-            }),
-        }
-    }
-}
-
-fn delete_button(row: &mut CreateActionRow, ephemeralish: bool) -> &mut CreateActionRow {
-    let suffix = if ephemeralish { "-ephemeralish" } else { "" };
-    row.create_button(|button| {
-        button.custom_id(format!("delete{suffix}"));
-        if ephemeralish {
-            button.emoji('🗑').label("Delete").style(ButtonStyle::Danger)
-        } else {
-            button
-                .emoji(ReactionType::Custom {
-                    animated: false,
-                    id: 991327676302364742.into(),
-                    name: Some("hide".into()),
-                })
-                .label("Hide Buttons")
-                .style(ButtonStyle::Danger)
-        }
-    })
-}
-
-fn add_command_buttons(
-    row: &mut CreateActionRow,
-    id: MessageId,
-    ephemeralish: bool,
-) -> &mut CreateActionRow {
-    for &command in COMMANDS {
-        command.add_button(row, id, ephemeralish);
-    }
-    row
-}
-
-fn add_command_buttons_except(
-    row: &mut CreateActionRow,
-    id: MessageId,
-    except: Command,
-    ephemeralish: bool,
-) -> &mut CreateActionRow {
-    for &command in COMMANDS {
-        if except != command {
-            command.add_button(row, id, ephemeralish);
-        }
-    }
-    delete_button(row, ephemeralish)
-}
 
 async fn create_interaction_response<'a, F>(
     ctx: &Context,
@@ -558,18 +454,16 @@ impl EventHandler for Handler {
                         }
                     }
                 } else if !NO_AUTO_RESPOND.contains(&lang) && !message.author.bot {
-                    send(&ctx, &channel, |msg| {
-                        // empty messages are not allowed, so i guess just send a zwsp lol
-                        msg.reference_message(&message)
-                            .allowed_mentions(|mentions| mentions.replied_user(false))
-                            .content(format!("This message contains a `{lang}` codeblock which i know how to work with! Press `Delete` to remove this."))
-                            .components(|c| {
-                                c.create_action_row(|row| {
-                                    add_command_buttons(row, message.id, true);
-                                    delete_button(row, true)
-                                })
-                            })
-                    })
+                    run_command(
+                        &ctx,
+                        &channel,
+                        Command::Render,
+                        config,
+                        code,
+                        ReplyMethod::PublicReference(&message),
+                        message.author.id,
+                        true,
+                    )
                     .await
                     .unwrap();
                 }
@@ -583,6 +477,8 @@ impl EventHandler for Handler {
                 if interaction.data.component_type == ComponentType::Button {
                     let ref message = interaction.message;
                     let channel = message.channel(&ctx).await.unwrap();
+                    // A lot of this stuff is legacy, because the bot used to work like this. I think only "highlight" is actually supposed to ever come through here now?
+                    // but might as well keep the old buttons half-functional still. because why not.
                     let interact_id = &interaction.data.custom_id[..];
                     let (interact_id, ephemeralish) = if interact_id.ends_with("-ephemeralish") {
                         (
@@ -704,7 +600,7 @@ impl EventHandler for Handler {
                         &channel,
                         &referenced,
                         true,
-                        false,
+                        true,
                     )
                     .await
                     {
@@ -715,10 +611,8 @@ impl EventHandler for Handler {
                             interaction.defer(&ctx).await.unwrap();
                             delete(&ctx, message, ephemeralish).await;
                         }
-                        InteractionCommandResult::FinishedSuccessfully => {
-                            delete(&ctx, message, ephemeralish).await
-                        }
-                        InteractionCommandResult::InformedError => (), // do nothing, we already informed the user
+                        InteractionCommandResult::FinishedSuccessfully => (), // do nothing, no new public message was sent, it was ephemeral so leave the button for others
+                        InteractionCommandResult::InformedError => (), // do nothing, we already informed the user of the error
                     }
                 }
             }
@@ -900,46 +794,24 @@ async fn run_command(
     lock_render_for: UserId,
     add_components: bool,
 ) -> Result<(), &'static str> {
-    let except = if add_components { Some(command) } else { None };
     Ok(match command {
         Command::Highlight => {
             let formatted = syntax_highlight(config, code)?;
-            send_chunked_message_with_commands(
-                ctx,
-                channel,
-                chunk_ansi(&formatted)?,
-                reply_to,
-                except,
-                false,
-            )
-            .await
-            .unwrap()
+            send_chunked_message_with_commands(ctx, channel, chunk_ansi(&formatted)?, reply_to)
+                .await
+                .unwrap()
         }
         Command::PrettyParse => {
             let formatted = pretty_parse(config, code, true)?;
-            send_chunked_message_with_commands(
-                ctx,
-                channel,
-                chunk_ansi(&formatted)?,
-                reply_to,
-                except,
-                false,
-            )
-            .await
-            .unwrap()
+            send_chunked_message_with_commands(ctx, channel, chunk_ansi(&formatted)?, reply_to)
+                .await
+                .unwrap()
         }
         Command::PlainParse => {
             let formatted = pretty_parse(config, code, false)?;
-            send_chunked_message_with_commands(
-                ctx,
-                channel,
-                chunk_ansi(&formatted)?,
-                reply_to,
-                except,
-                false,
-            )
-            .await
-            .unwrap()
+            send_chunked_message_with_commands(ctx, channel, chunk_ansi(&formatted)?, reply_to)
+                .await
+                .unwrap()
         }
         Command::Render => {
             lazy_static! {
